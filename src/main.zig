@@ -1,46 +1,44 @@
-//! By convention, main.zig is where your main function lives in the case that
-//! you are building an executable. If you are making a library, the convention
-//! is to delete this file and start with root.zig instead.
+const std = @import("std");
+const clap = @import("clap");
+const c = @cImport({
+    @cInclude("sys/ptrace.h");
+    @cInclude("sys/types.h");
+});
+
+pub fn attach(argc: c_int, argv: **c_char) c.pid_t {
+    _ = argc;
+    _ = argv;
+    unreachable;
+}
 
 pub fn main() !void {
-    // Prints to stderr (it's a shortcut based on `std.io.getStdErr()`)
-    std.debug.print("All your {s} are belong to us.\n", .{"codebase"});
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
 
-    // stdout is for the actual output of your application, for example if you
-    // are implementing gzip, then only the compressed bytes should be sent to
-    // stdout, not any debugging messages.
-    const stdout_file = std.io.getStdOut().writer();
-    var bw = std.io.bufferedWriter(stdout_file);
-    const stdout = bw.writer();
+    // First we specify what parameters our program can take.
+    // We can use `parseParamsComptime` to parse a string into an array of `Param(Help)`.
+    const params = comptime clap.parseParamsComptime(
+        \\-h, --help             Display this help and exit.
+        \\-p, --pid <usize>   pid of the process to attach to
+        \\
+    );
 
-    try stdout.print("Run `zig build test` to run the tests.\n", .{});
-
-    try bw.flush(); // Don't forget to flush!
-}
-
-test "simple test" {
-    var list = std.ArrayList(i32).init(std.testing.allocator);
-    defer list.deinit(); // Try commenting this out and see if zig detects the memory leak!
-    try list.append(42);
-    try std.testing.expectEqual(@as(i32, 42), list.pop());
-}
-
-test "use other module" {
-    try std.testing.expectEqual(@as(i32, 150), lib.add(100, 50));
-}
-
-test "fuzz example" {
-    const Context = struct {
-        fn testOne(context: @This(), input: []const u8) anyerror!void {
-            _ = context;
-            // Try passing `--fuzz` to `zig build test` and see if it manages to fail this test case!
-            try std.testing.expect(!std.mem.eql(u8, "canyoufindme", input));
-        }
+    // Initialize our diagnostics, which can be used for reporting useful errors.
+    // This is optional. You can also pass `.{}` to `clap.parse` if you don't
+    // care about the extra information `Diagnostics` provides.
+    var diag = clap.Diagnostic{};
+    var res = clap.parse(clap.Help, &params, clap.parsers.default, .{
+        .diagnostic = &diag,
+        .allocator = gpa.allocator(),
+    }) catch |err| {
+        // Report useful error and exit.
+        try diag.report(std.io.getStdErr().writer(), err);
+        return err;
     };
-    try std.testing.fuzz(Context{}, Context.testOne, .{});
+    defer res.deinit();
+
+    if (res.args.help != 0)
+        try clap.help(std.io.getStdErr().writer(), clap.Help, &params, .{});
+    if (res.args.pid) |p|
+        std.debug.print("--pid = {}\n", .{p});
 }
-
-const std = @import("std");
-
-/// This imports the separate module containing `root.zig`. Take a look in `build.zig` for details.
-const lib = @import("zdb_lib");
