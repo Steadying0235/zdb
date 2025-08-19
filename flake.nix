@@ -18,6 +18,9 @@
         zig
         zls
         lldb
+        libedit
+        ncurses
+        pkg-config
       ];
     };
   };
