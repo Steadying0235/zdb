@@ -2,12 +2,12 @@ const std = @import("std");
 const clap = @import("clap");
 const c = @cImport({
     @cInclude("sys/ptrace.h");
-    @cInclude("sys/types.h");
 });
+const linux = std.os.linux;
+const Pid = linux.pid_t;
 
-pub fn attach(argc: c_int, argv: **c_char) c.pid_t {
-    _ = argc;
-    _ = argv;
+pub fn attach(pid: Pid) void {
+    _ = pid;
     unreachable;
 }
 
