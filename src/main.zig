@@ -1,6 +1,7 @@
 const std = @import("std");
 const clap = @import("clap");
 const c = @cImport({
+    @cInclude("unistd.h");
     @cInclude("sys/ptrace.h");
     @cInclude("editline/readline.h");
 });
@@ -9,17 +10,44 @@ const Pid = linux.pid_t;
 
 const cNullPtr: ?*anyopaque = null;
 
+const PTRACE_TRACEME = 0;
+
 const PTRACE_ATTACH = 16;
 const PTRACE_DETACH = 17;
 
-pub fn attach(pid: Pid) void {
+const PtraceError = error{
+    AttachError,
+    ForkError,
+    TraceError,
+    ExecutionError,
+};
+
+// TODO: Setup proper error handling
+// // returns pid of child process or error
+pub fn attach(pid: Pid) !Pid {
     const res = c.ptrace(PTRACE_ATTACH, pid, cNullPtr, cNullPtr);
     if (res == -1) {
-        // ptraceError
         std.debug.print("failed to attach to process: {}\n", .{pid});
-        return;
+        return PtraceError.AttachError;
     }
     std.debug.print("successfully attached to process: {}\n", .{pid});
+    const program_path: []const u8 = undefined;
+
+    pid = linux.fork();
+    if (pid < 0) {
+        // error during fork
+        return PtraceError.ForkError;
+    } else if (pid == 0) {
+        if (c.ptrace(PTRACE_TRACEME, 0, cNullPtr, cNullPtr) == -1) {
+            // error trying to trace child
+            return PtraceError.TraceError;
+        }
+        if (c.execlp(program_path, program_path, cNullPtr) == -1) {
+            // error executing process
+            return PtraceError.ExecutionError;
+        }
+    }
+    return pid;
 }
 
 pub fn main() !void {
@@ -48,5 +76,9 @@ pub fn main() !void {
         std.debug.print("--pid = {}\n", .{p});
         attach(p);
         _ = c.ptrace(PTRACE_DETACH, p, cNullPtr, cNullPtr);
+    }
+
+    if (linux.waitpid(_, &wait_status, 0) == -1) {
+        // waitpid failed
     }
 }
